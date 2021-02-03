@@ -2,6 +2,10 @@ pragma solidity ^0.5.16;
 
 import "./CToken.sol";
 
+interface IFlashloanReceiver {
+    function executeOperation(address underlying, uint256 amount, uint256 fee, bytes calldata params) external;
+}
+
 /**
  * @title Compound's CCapableErc20 Contract
  * @notice CTokens which wrap an EIP-20 underlying
@@ -218,5 +222,28 @@ contract CCapableErc20 is CToken, CCapableErc20Interface, CCapableDelegateInterf
         }
         require(success, "TOKEN_TRANSFER_OUT_FAILED");
         internalCash = sub_(internalCash, amount);
+    }
+
+    function flashloan(address _receiver, uint amount, bytes calldata params) external nonReentrant {
+        uint balanceBefore = EIP20Interface(underlying).balanceOf(address(this));
+
+        // 1. calculate fee
+        // fee TBD
+        uint fee = 100;
+
+        // 2. transfer loan to receiver
+        IFlashloanReceiver receiver = IFlashloanReceiver(_receiver);
+        address payable userPayable = address(uint160(_receiver));
+        doTransferOut(userPayable, amount);
+
+        // 3. execute receiver's callback function
+        receiver.executeOperation(underlying, amount, fee, params);
+
+        // 4. check balance
+        uint balanceAfter = EIP20Interface(underlying).balanceOf(address(this));
+        require(balanceAfter == add_(balanceBefore, amount));
+
+        // 5. update internal cash
+        internalCash = balanceAfter;
     }
 }
